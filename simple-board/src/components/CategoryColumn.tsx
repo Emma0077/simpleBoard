@@ -32,6 +32,7 @@ export default function CategoryColumn({
   onDeleteCategory,
   onToggleCategoryVisibility,
   onDeleteContent,
+  onUpdateContent,
   onContentClick,
 }: CategoryColumnProps) {
   const { isLoggedIn } = useAuth();
@@ -176,7 +177,7 @@ export default function CategoryColumn({
                 userIdentifier={userIdentifier}
                 onDelete={() => onDeleteContent(item.id, item.user_identifier)}
                 onClick={async () => await onContentClick(item)}
-
+                onUpdate={(updates) => onUpdateContent(item.id, updates)}
               />
             </div>
           ))

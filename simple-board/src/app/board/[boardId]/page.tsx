@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ContentItemWithLikes, Board, Category } from '@/types';
-import { supabase, getContentItemsForBoard, getContentItemForViewer } from '@/lib/supabase';
+import { supabase, getContentItemsForBoard, getContentItemForViewer, updateContentItem, updateCategory, updateBoard } from '@/lib/supabase';
 import { getUserIdentifier } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import BoardHeader from '@/components/BoardHeader';
@@ -170,28 +170,22 @@ export default function BoardPage() {
     }
   };
 
-  // 컨텐츠 수정
+  // 컨텐츠 수정 (큐잉 시스템 사용)
   const handleUpdateContent = async (itemId: string, updates: Partial<ContentItemWithLikes>) => {
     try {
-      let query = supabase
-        .from('content_items')
-        .update(updates)
-        .eq('id', itemId);
+      // 큐잉된 업데이트 함수 사용 (순서 보장)
+      const data = await updateContentItem(itemId, updates, userIdentifier, isLoggedIn);
 
-      // 관리자가 아닐 경우에만 작성자 확인
-      if (!isLoggedIn) {
-        query = query.eq('user_identifier', userIdentifier);
-      }
-      
-      const { data, error } = await query.select().single();
-
-      if (error) throw error;
-
-      // 즉시 로컬 상태 업데이트
+      // 즉시 로컬 상태 업데이트 (Realtime UPDATE 이벤트가 오기 전에)
+      // Realtime에서 동일한 업데이트가 올 수 있으므로 타임스탬프로 구분
       if (data) {
         setContentItems(prev => 
           prev.map(item => 
-            item.id === itemId ? { ...item, ...data } : item
+            item.id === itemId ? { 
+              ...item, 
+              ...data,
+              _localUpdate: Date.now() // 로컬 업데이트 마커
+            } : item
           )
         );
       }
@@ -236,17 +230,11 @@ export default function BoardPage() {
     }
   };
 
-  // 카테고리 수정
+  // 카테고리 수정 (큐잉 시스템 사용)
   const handleUpdateCategory = async (categoryId: string, updates: Partial<Category>) => {
     try {
-      const { data, error } = await supabase
-        .from('categories')
-        .update(updates)
-        .eq('id', categoryId)
-        .select()
-        .single();
-
-      if (error) throw error;
+      // 큐잉된 업데이트 함수 사용 (순서 보장)
+      const data = await updateCategory(categoryId, updates);
       
       // 즉시 로컬 상태 업데이트 (낙관적 업데이트)
       if (data) {
@@ -261,8 +249,10 @@ export default function BoardPage() {
     } catch (error) {
       console.error('Error updating category:', error);
       toast.error('카테고리 수정에 실패했습니다.');
-      // 오류 발생 시 카테고리 목록 다시 로드
-      loadCategories();
+      // 오류 발생 시에도 전체 새로고침하지 않음 (무한 리로딩 방지)
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('Category update failed - not forcing reload');
+      }
     }
   };
 
@@ -305,21 +295,17 @@ export default function BoardPage() {
 
 
 
-  // 보드 편집 저장
+  // 보드 편집 저장 (큐잉 시스템 사용)
   const handleSaveBoardEdit = async (data: { title: string; description?: string }) => {
     try {
-      const { error } = await supabase
-        .from('boards')
-        .update({
-          title: data.title,
-          description: data.description,
-        })
-        .eq('id', boardId);
-
-      if (error) throw error;
+      // 큐잉된 업데이트 함수 사용 (순서 보장)
+      const updatedBoard = await updateBoard(boardId, {
+        title: data.title,
+        description: data.description,
+      });
 
       // 로컬 상태 업데이트
-      setBoard(prev => prev ? { ...prev, ...data } : null);
+      setBoard(prev => prev ? { ...prev, ...updatedBoard } : null);
       
       toast.success('보드 정보가 수정되었습니다.');
       setIsEditModalOpen(false);
@@ -484,9 +470,11 @@ export default function BoardPage() {
         }
       } catch (error) {
         console.error('Error updating content item after viewer close:', error);
-        toast.error('콘텐츠 정보를 업데이트하는데 실패했습니다.');
-        // 실패 시 전체 목록을 다시 불러옵니다.
-        await loadContentItems();
+        // 실패 시에도 전체 새로고침하지 않음 (무한 리로딩 방지)
+        // 사용자가 직접 새로고침하거나 다른 액션을 통해 자연스럽게 해결되도록 함
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Content update after viewer close failed - not forcing reload');
+        }
       }
     }
     
@@ -565,13 +553,19 @@ export default function BoardPage() {
     }
   };
 
-  // 실시간 구독 설정
+  // 실시간 구독 설정 (순차 로딩으로 Race Condition 방지)
   useEffect(() => {
-    loadBoard();
-    loadCategories();
-    loadContentItems();
-
-    const contentItemIds = contentItems.map(item => item.id).join(',');
+    const initializeBoard = async () => {
+      try {
+        await loadBoard();
+        await loadCategories();
+        await loadContentItems();
+      } catch (error) {
+        console.error('Board initialization error:', error);
+      }
+    };
+    
+    initializeBoard();
 
     const channel = supabase
       .channel(`board_${boardId}`)
@@ -616,9 +610,21 @@ export default function BoardPage() {
             setContentItems(prev => prev.filter(item => item.id !== payload.old.id));
           } else if (payload.eventType === 'UPDATE') {
             setContentItems(prev => 
-              prev.map(item => 
-                item.id === payload.new.id ? { ...item, ...payload.new } : item
-              )
+              prev.map(item => {
+                if (item.id === payload.new.id) {
+                  // 로컬 업데이트가 최근에 있었다면 Realtime 업데이트 무시 (1초 이내)
+                  const localUpdateTime = item._localUpdate || 0;
+                  const timeDiff = Date.now() - localUpdateTime;
+                  
+                  if (timeDiff < 1000) {
+                    return item; // 로컬 업데이트가 우선
+                  }
+                  
+                  // 그 외에는 Realtime 업데이트 적용
+                  return { ...item, ...payload.new, _localUpdate: undefined };
+                }
+                return item;
+              })
             );
           }
         }
@@ -654,42 +660,14 @@ export default function BoardPage() {
           }
         }
       )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'likes',
-          filter: `content_item_id=in.(${contentItemIds})`,
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            // 좋아요 추가 시 해당 콘텐츠의 좋아요 개수 증가
-            setContentItems(prev => 
-              prev.map(item => 
-                item.id === payload.new.content_item_id 
-                  ? { ...item, like_count: item.like_count + 1 }
-                  : item
-              )
-            );
-          } else if (payload.eventType === 'DELETE') {
-            // 좋아요 삭제 시 해당 콘텐츠의 좋아요 개수 감소
-            setContentItems(prev => 
-              prev.map(item => 
-                item.id === payload.old.content_item_id 
-                  ? { ...item, like_count: Math.max(0, item.like_count - 1) }
-                  : item
-              )
-            );
-          }
-        }
-      )
+      // 좋아요 관련 Realtime은 LikeButton에서 개별적으로 처리하므로 여기서는 제거
+      // (중복 구독으로 인한 상태 충돌 방지)
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [boardId, loadBoard, loadCategories, loadContentItems, contentItems]);
+  }, [boardId]); // boardId가 변경될 때만 재구독 (무한 루프 방지)
 
   if (isLoading) {
     return (

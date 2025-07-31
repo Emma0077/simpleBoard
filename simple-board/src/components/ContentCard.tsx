@@ -12,6 +12,7 @@ interface ContentCardProps {
   userIdentifier: string;
   onDelete: () => void;
   onClick: () => void;
+  onUpdate?: (updates: Partial<ContentItemWithLikes>) => void;
 }
 
 function ContentCard({ 
@@ -19,7 +20,8 @@ function ContentCard({
   isOwner, 
   userIdentifier,
   onDelete, 
-  onClick
+  onClick,
+  onUpdate
 }: ContentCardProps) {
 
   // 개발 모드에서만 로그 출력 (렌더링 최적화를 위해 주석 처리)
@@ -109,6 +111,7 @@ function ContentCard({
               contentItemId={item.id}
               userIdentifier={userIdentifier}
               initialLikeCount={item.like_count}
+              onLikeChange={onUpdate ? (newLikeCount) => onUpdate({ like_count: newLikeCount }) : undefined}
             />
             {isOwner && (
               <button

@@ -19,6 +19,7 @@ function LikeButton({
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(initialLikeCount);
   const [isLoading, setIsLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // likeCount 사용 (단순화)
   const displayCount = likeCount;
@@ -38,8 +39,12 @@ function LikeButton({
     }
   }, [contentItemId, userIdentifier]);
 
-  // 실시간 좋아요 개수 업데이트 (단순화)
+  // 실시간 좋아요 개수 업데이트 (안정성 강화)
   useEffect(() => {
+    if (!contentItemId) return;
+
+    let isMounted = true; // 컴포넌트 마운트 상태 추적
+
     const refreshLikeCount = async () => {
       try {
         const { data: likeData, error: likeError } = await supabase
@@ -47,26 +52,34 @@ function LikeButton({
           .select('id')
           .eq('content_item_id', contentItemId);
         
+        if (!isMounted) return; // 언마운트된 경우 상태 업데이트 방지
+        
         const actualLikeCount = likeError ? 0 : (likeData?.length || 0);
         
-        // 카운트가 실제로 변경된 경우에만 업데이트
-        setLikeCount(prevCount => {
-          if (actualLikeCount !== prevCount) {
-            return actualLikeCount;
-          }
-          return prevCount;
-        });
-      } catch {
-        // 에러 처리 (로그 없이)
+        // 처리 중이 아닐 때만 업데이트 (상태 충돌 방지)
+        if (!isProcessing) {
+          setLikeCount(prevCount => {
+            if (actualLikeCount !== prevCount) {
+              return actualLikeCount;
+            }
+            return prevCount;
+          });
+        }
+      } catch (error) {
+        // 에러 처리 강화
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Like count refresh error:', error);
+        }
       }
     };
 
     // 초기 로드
     refreshLikeCount();
 
-    // Supabase Realtime 구독
+    // Supabase Realtime 구독 (중복 방지)
+    const channelName = `likes-${contentItemId}-${Math.random().toString(36).substr(2, 9)}`;
     const channel = supabase
-      .channel(`likes-${contentItemId}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
@@ -80,9 +93,10 @@ function LikeButton({
       .subscribe();
 
     return () => {
+      isMounted = false;
       channel.unsubscribe();
     };
-  }, [contentItemId]);
+  }, [contentItemId, isProcessing]);
 
 
 
@@ -90,9 +104,11 @@ function LikeButton({
     e.stopPropagation();
     e.preventDefault();
     
-    if (isLoading) return;
+    // Race Condition 방지: 이미 처리 중이면 무시
+    if (isLoading || isProcessing) return;
     
     setIsLoading(true);
+    setIsProcessing(true);
     
     try {
       if (!isLiked) {
@@ -100,8 +116,8 @@ function LikeButton({
         const result = await likeContentItem(contentItemId, userIdentifier);
         if (result !== null) { // 성공적으로 추가된 경우에만 UI 업데이트
           setIsLiked(true);
-          // 낙관적 업데이트
-          const newCount = likeCount + 1;
+          // 서버에서 반환된 최신 데이터로 업데이트
+          const newCount = result.like_count;
           setLikeCount(newCount);
           if (onLikeChange) onLikeChange(newCount);
         }
@@ -126,6 +142,8 @@ function LikeButton({
         }
       } finally {
         setIsLoading(false);
+        // 약간의 지연 후 처리 상태 해제 (중복 클릭 방지)
+        setTimeout(() => setIsProcessing(false), 100);
       }
   };
 
@@ -133,14 +151,14 @@ function LikeButton({
   return (
     <button
       onClick={handleLikeClick}
-      disabled={isLoading}
+      disabled={isLoading || isProcessing}
       className={`
         flex items-center gap-1 px-2 py-1 rounded-md transition-all duration-200
         ${isLiked 
           ? 'text-red-500 hover:text-red-600 bg-red-50 hover:bg-red-100' 
           : 'text-gray-500 hover:text-red-500 hover:bg-red-50'
         }
-        ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+        ${(isLoading || isProcessing) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
       `}
       title={isLiked ? '좋아요 취소' : '좋아요'}
     >

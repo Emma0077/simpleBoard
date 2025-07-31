@@ -221,6 +221,7 @@ export default function ContentViewer({
               contentItemId={content.id}
               userIdentifier={userIdentifier}
               initialLikeCount={content.like_count}
+              onLikeChange={(newLikeCount) => onUpdate({ like_count: newLikeCount })}
             />
             {isOwner && !isEditing && (
               <button

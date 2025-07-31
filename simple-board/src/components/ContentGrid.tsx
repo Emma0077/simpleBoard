@@ -84,6 +84,7 @@ export default function ContentGrid({
             userIdentifier={userIdentifier}
             onDelete={() => onDeleteContent(item.id, item.user_identifier)}
             onClick={() => handleContentClick(item)}
+            onUpdate={(updates) => onUpdateContent(item.id, updates)}
           />
         ))}
       </div>

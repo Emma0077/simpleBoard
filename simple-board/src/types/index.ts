@@ -45,6 +45,7 @@ export interface ContentItem {
 export interface ContentItemWithLikes extends ContentItem {
   like_count: number;
   age_seconds: number;
+  _localUpdate?: number; // 로컬 업데이트 마커 (Realtime 충돌 방지)
 }
 
 export interface Like {
