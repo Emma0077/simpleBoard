@@ -5,6 +5,7 @@ import { ContentItemWithLikes } from '@/types';
 import { Trash2, ExternalLink, Clock, Type, Image as ImageIcon, Link, File, Download, User } from 'lucide-react';
 import { getRelativeTime } from '@/lib/utils';
 import LikeButton from './LikeButton';
+import Image from 'next/image';
 
 interface ContentCardProps {
   item: ContentItemWithLikes;
@@ -148,11 +149,18 @@ function ContentCard({
         {item.type === 'image' && (
           <div className="space-y-2">
             {item.thumbnail_url ? (
-              <img 
-                src={item.thumbnail_url} 
-                alt={item.title || '이미지 썸네일'}
-                className="w-full h-32 object-cover rounded-md border border-gray-200 bg-gray-50"
-              />
+              <div className="relative w-full h-32 bg-gray-50 rounded-md border border-gray-200 overflow-hidden">
+                <Image 
+                  src={item.thumbnail_url} 
+                  alt={item.title || '이미지 썸네일'}
+                  fill
+                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                  className="object-cover"
+                  priority={false} // 썸네일은 지연 로딩
+                  placeholder="blur"
+                  blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+                />
+              </div>
             ) : (
               <div className="w-full h-32 bg-gray-100 rounded-md border border-gray-200 flex items-center justify-center text-gray-400">
                 <ImageIcon className="w-8 h-8" />

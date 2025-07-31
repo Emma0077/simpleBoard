@@ -7,6 +7,7 @@ import { getRelativeTime, isValidUrl } from '@/lib/utils';
 import { getUserIdentifier } from '@/lib/utils';
 import LikeButton from './LikeButton';
 import toast from 'react-hot-toast';
+import Image from 'next/image';
 
 interface ContentViewerProps {
   isOpen: boolean;
@@ -314,24 +315,31 @@ export default function ContentViewer({
               {content.type === 'image' && (
                 <div className="space-y-4">
                   {content.image_url && !imageError ? (
-                    <div className="relative bg-gray-100 rounded-lg flex items-center justify-center min-h-[24rem]">
+                    <div className="relative bg-gray-100 rounded-lg overflow-hidden min-h-[24rem] flex items-center justify-center">
                       {imageLoading && (
-                        <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="absolute inset-0 flex items-center justify-center z-10">
                           <div className="text-center">
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
                             <p className="text-gray-600">이미지를 불러오는 중...</p>
                           </div>
                         </div>
                       )}
-                      <img
-                        src={content.image_url}
-                        alt={content.title || '이미지'}
-                        onLoad={() => setImageLoading(false)}
-                        onError={() => setImageError(true)}
-                        className={`transition-opacity duration-300 w-full max-h-[70vh] object-contain ${imageLoading ? 'opacity-0' : 'opacity-100'}`}
-                      />
+                      <div className="relative w-full h-[70vh]">
+                        <Image
+                          src={content.image_url}
+                          alt={content.title || '이미지'}
+                          fill
+                          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 70vw"
+                          className={`object-contain transition-opacity duration-300 ${imageLoading ? 'opacity-0' : 'opacity-100'}`}
+                          onLoad={() => setImageLoading(false)}
+                          onError={() => setImageError(true)}
+                          priority={true} // 원본 이미지는 우선 로딩
+                          placeholder="blur"
+                          blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+                        />
+                      </div>
                       {!imageLoading && (
-                        <div className="absolute top-4 right-4">
+                        <div className="absolute top-4 right-4 z-20">
                           <button
                             onClick={handleImageDownload}
                             className="bg-black bg-opacity-50 hover:bg-opacity-70 text-white p-2 rounded-full transition-colors"
